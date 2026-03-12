@@ -178,7 +178,7 @@ io.on('connection', (socket) => {
     });
   });
 
-  socket.on('send-message', ({ text, type, fileUrl, fileName }) => {
+  socket.on('send-message', ({ text, type, fileUrl, fileName, replyTo }) => {
     if (!currentRoom || !currentUser) return;
     const room = rooms.get(currentRoom);
     if (!room) return;
@@ -190,6 +190,7 @@ io.on('connection', (socket) => {
       type: type || 'text',
       fileUrl: fileUrl || null,
       fileName: fileName || null,
+      replyTo: replyTo || null,
       timestamp: Date.now(),
     };
 
@@ -199,6 +200,18 @@ io.on('connection', (socket) => {
     }
 
     io.to(currentRoom).emit('new-message', message);
+  });
+
+  socket.on('unsend-message', ({ messageId }) => {
+    if (!currentRoom || !currentUser) return;
+    const room = rooms.get(currentRoom);
+    if (!room) return;
+
+    const msgIndex = room.messages.findIndex((m) => m.id === messageId && m.username === currentUser);
+    if (msgIndex === -1) return;
+
+    room.messages.splice(msgIndex, 1);
+    io.to(currentRoom).emit('message-unsent', { messageId });
   });
 
   socket.on('typing', (isTyping) => {

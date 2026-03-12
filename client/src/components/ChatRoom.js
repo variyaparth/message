@@ -26,6 +26,7 @@ export default function ChatRoom({ roomId, username, onLeave }) {
   const [showSettings, setShowSettings] = useState(false);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState('');
+  const [replyTo, setReplyTo] = useState(null);
   const messagesEndRef = useRef(null);
   const typingTimeoutRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -68,21 +69,35 @@ export default function ChatRoom({ roomId, username, onLeave }) {
       setRoomInfo((prev) => ({ ...prev, name, theme }));
     });
 
+    socket.on('message-unsent', ({ messageId }) => {
+      setMessages((prev) => prev.filter((m) => m.id !== messageId));
+    });
+
     return () => {
       socket.off('new-message');
       socket.off('user-joined');
       socket.off('user-left');
       socket.off('user-typing');
       socket.off('room-updated');
+      socket.off('message-unsent');
     };
   }, [roomId, username]);
 
   const handleSend = (e) => {
     e.preventDefault();
     if (!text.trim()) return;
-    socket.emit('send-message', { text: text.trim(), type: 'text' });
+    socket.emit('send-message', {
+      text: text.trim(),
+      type: 'text',
+      replyTo: replyTo ? { id: replyTo.id, username: replyTo.username, text: replyTo.text, type: replyTo.type } : null,
+    });
     setText('');
+    setReplyTo(null);
     socket.emit('typing', false);
+  };
+
+  const handleUnsend = (messageId) => {
+    socket.emit('unsend-message', { messageId });
   };
 
   const handleTyping = (value) => {
@@ -188,7 +203,8 @@ export default function ChatRoom({ roomId, username, onLeave }) {
               </div>
             )}
             {messages.map((msg) => (
-              <MessageBubble key={msg.id} message={msg} isOwn={msg.username === username} isLight={isLight} />
+              <MessageBubble key={msg.id} message={msg} isOwn={msg.username === username} isLight={isLight}
+                onReply={(m) => setReplyTo(m)} onUnsend={handleUnsend} />
             ))}
             {typingUsers.length > 0 && (
               <div className={`flex items-center gap-2 px-4 py-2 ${isLight ? 'text-gray-500' : 'text-white/50'} text-sm`}>
@@ -205,6 +221,22 @@ export default function ChatRoom({ roomId, username, onLeave }) {
 
           {/* Input */}
           <div className={`px-3 py-3 border-t ${isLight ? 'bg-white/80 border-gray-200' : 'bg-black/20 border-white/10'} backdrop-blur-xl shrink-0`}>
+            {/* Reply bar */}
+            {replyTo && (
+              <div className={`flex items-center justify-between mb-2 pl-3 border-l-2 border-purple-400 rounded-r-lg py-2 px-3 ${isLight ? 'bg-purple-50' : 'bg-white/5'}`}>
+                <div className="min-w-0 flex-1">
+                  <p className={`text-xs font-semibold ${isLight ? 'text-purple-600' : 'text-purple-300'}`}>Replying to {replyTo.username}</p>
+                  <p className={`text-xs truncate ${isLight ? 'text-gray-500' : 'text-white/50'}`}>
+                    {replyTo.type === 'image' ? '📷 Photo' : replyTo.type === 'audio' ? '🎤 Voice Note' : replyTo.text?.slice(0, 60)}
+                  </p>
+                </div>
+                <button onClick={() => setReplyTo(null)} className={`p-1 rounded-full shrink-0 ml-2 ${isLight ? 'hover:bg-gray-200 text-gray-400' : 'hover:bg-white/10 text-white/40'}`}>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            )}
             <div className="flex items-end gap-2">
             <form onSubmit={handleSend} className="flex items-end gap-2 flex-1 min-w-0">
               <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept="image/jpeg,image/png,image/gif,image/webp" className="hidden" />
