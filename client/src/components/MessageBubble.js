@@ -226,7 +226,3 @@ export default function MessageBubble({ message, isOwn, isLight, onReply, onUnse
     </div>
   );
 }
-      )}
-    </div>
-  );
-}
