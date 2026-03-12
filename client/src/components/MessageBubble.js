@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import { SERVER_URL } from '../socket';
 
 function formatTime(ts) {
@@ -28,6 +28,7 @@ function getReplyPreviewText(replyTo) {
 
 export default function MessageBubble({ message, isOwn, isLight, onReply, onUnsend }) {
   const [showMenu, setShowMenu] = useState(false);
+  const [menuPos, setMenuPos] = useState({ x: 0, y: 0 });
   const longPressTimer = useRef(null);
   const touchStartX = useRef(0);
   const touchDeltaX = useRef(0);
@@ -45,11 +46,19 @@ export default function MessageBubble({ message, isOwn, isLight, onReply, onUnse
 
   const nameColor = isLight ? getUserColorLight(message.username) : getUserColor(message.username);
 
+  const openMenu = (clientX, clientY) => {
+    setMenuPos({ x: clientX, y: clientY });
+    setShowMenu(true);
+  };
+
   const handleTouchStart = (e) => {
     touchStartX.current = e.touches[0].clientX;
     touchDeltaX.current = 0;
+    const touch = e.touches[0];
     longPressTimer.current = setTimeout(() => {
-      if (Math.abs(touchDeltaX.current) < 10) setShowMenu(true);
+      if (Math.abs(touchDeltaX.current) < 10) {
+        openMenu(touch.clientX, touch.clientY);
+      }
     }, 500);
   };
 
@@ -76,20 +85,41 @@ export default function MessageBubble({ message, isOwn, isLight, onReply, onUnse
 
   const handleContextMenu = (e) => {
     e.preventDefault();
-    setShowMenu(true);
+    openMenu(e.clientX, e.clientY);
+  };
+
+  const handleDoubleClick = () => {
+    if (onReply) onReply(message);
   };
 
   return (
-    <div className={`flex ${isOwn ? 'justify-end' : 'justify-start'} mb-1 group relative`}>
-      {/* Swipe reply indicator */}
-      <div className={`absolute ${isOwn ? 'right-0' : 'left-0'} top-1/2 -translate-y-1/2 opacity-30 pointer-events-none`}>
-        <svg className="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a5 5 0 015 5v3M3 10l4-4M3 10l4 4" />
-        </svg>
-      </div>
+    <div className={`flex items-center gap-1 ${isOwn ? 'justify-end' : 'justify-start'} mb-1 group`}>
+      {/* Reply button (desktop) - before bubble for own messages */}
+      {isOwn && (
+        <div className="hidden group-hover:flex items-center gap-1 shrink-0">
+          {onUnsend && (
+            <button onClick={() => onUnsend(message.id)}
+              className="p-1.5 rounded-full hover:bg-red-500/20 text-red-400/60 hover:text-red-400 transition-colors"
+              title="Unsend">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </button>
+          )}
+          {onReply && (
+            <button onClick={() => onReply(message)}
+              className={`p-1.5 rounded-full transition-colors ${isLight ? 'hover:bg-gray-200 text-gray-400/60 hover:text-gray-500' : 'hover:bg-white/10 text-white/30 hover:text-white/60'}`}
+              title="Reply">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a5 5 0 015 5v3M3 10l4-4M3 10l4 4" />
+              </svg>
+            </button>
+          )}
+        </div>
+      )}
 
       <div ref={bubbleRef}
-        className={`max-w-[85%] sm:max-w-[70%] rounded-2xl px-4 py-2 relative select-none ${
+        className={`max-w-[85%] sm:max-w-[70%] rounded-2xl px-4 py-2 select-none ${
           isOwn
             ? 'bg-purple-600 text-white rounded-br-md'
             : isLight
@@ -100,6 +130,7 @@ export default function MessageBubble({ message, isOwn, isLight, onReply, onUnse
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
         onContextMenu={handleContextMenu}
+        onDoubleClick={handleDoubleClick}
       >
         {!isOwn && (
           <p className={`text-xs font-semibold mb-0.5 ${nameColor}`}>{message.username}</p>
@@ -147,57 +178,54 @@ export default function MessageBubble({ message, isOwn, isLight, onReply, onUnse
         <p className={`text-[10px] mt-0.5 ${isOwn ? 'text-purple-200 text-right' : isLight ? 'text-gray-400' : 'text-white/40'}`}>
           {formatTime(message.timestamp)}
         </p>
-
-        {/* Action buttons on hover (desktop) */}
-        <div className={`absolute ${isOwn ? '-left-16' : '-right-16'} top-1/2 -translate-y-1/2 hidden group-hover:flex items-center gap-1`}>
-          {onReply && (
-            <button onClick={() => onReply(message)}
-              className={`p-1.5 rounded-full transition-colors ${isLight ? 'hover:bg-gray-200 text-gray-400' : 'hover:bg-white/10 text-white/40'}`}
-              title="Reply">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a5 5 0 015 5v3M3 10l4-4M3 10l4 4" />
-              </svg>
-            </button>
-          )}
-          {isOwn && onUnsend && (
-            <button onClick={() => onUnsend(message.id)}
-              className="p-1.5 rounded-full hover:bg-red-500/20 text-red-400 transition-colors"
-              title="Unsend">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
-            </button>
-          )}
-        </div>
       </div>
 
-      {/* Long-press context menu (mobile) */}
+      {/* Reply button (desktop) - after bubble for others' messages */}
+      {!isOwn && onReply && (
+        <div className="hidden group-hover:flex items-center shrink-0">
+          <button onClick={() => onReply(message)}
+            className={`p-1.5 rounded-full transition-colors ${isLight ? 'hover:bg-gray-200 text-gray-400/60 hover:text-gray-500' : 'hover:bg-white/10 text-white/30 hover:text-white/60'}`}
+            title="Reply">
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a5 5 0 015 5v3M3 10l4-4M3 10l4 4" />
+            </svg>
+          </button>
+        </div>
+      )}
+
+      {/* Context menu (fixed position - not clipped by overflow) */}
       {showMenu && (
         <>
-          <div className="fixed inset-0 z-40" onClick={() => setShowMenu(false)} />
-          <div className={`absolute z-50 ${isOwn ? 'right-0' : 'left-0'} top-full mt-1 rounded-xl shadow-2xl overflow-hidden border ${
-            isLight ? 'bg-white border-gray-200' : 'bg-gray-800 border-white/10'
-          }`}>
-            <button onClick={() => { onReply?.(message); setShowMenu(false); }}
-              className={`flex items-center gap-2 px-4 py-2.5 text-sm w-full text-left transition-colors ${
-                isLight ? 'hover:bg-gray-100 text-gray-700' : 'hover:bg-white/10 text-white'
-              }`}>
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a5 5 0 015 5v3M3 10l4-4M3 10l4 4" />
-              </svg>
-              Reply
-            </button>
-            {isOwn && (
-              <button onClick={() => { onUnsend?.(message.id); setShowMenu(false); }}
-                className="flex items-center gap-2 px-4 py-2.5 text-sm w-full text-left text-red-500 hover:bg-red-500/10 transition-colors">
+          <div className="fixed inset-0 z-[100]" onClick={() => setShowMenu(false)} />
+          <div className="fixed z-[101] rounded-xl shadow-2xl overflow-hidden border"
+            style={{ left: Math.min(menuPos.x, window.innerWidth - 160), top: Math.min(menuPos.y, window.innerHeight - 120) }}
+            onClick={() => setShowMenu(false)}>
+            <div className={`${isLight ? 'bg-white border-gray-200' : 'bg-gray-800 border-white/10'}`}>
+              <button onClick={() => { onReply?.(message); setShowMenu(false); }}
+                className={`flex items-center gap-2 px-4 py-2.5 text-sm w-full text-left transition-colors ${
+                  isLight ? 'hover:bg-gray-100 text-gray-700' : 'hover:bg-white/10 text-white'
+                }`}>
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a5 5 0 015 5v3M3 10l4-4M3 10l4 4" />
                 </svg>
-                Unsend
+                Reply
               </button>
-            )}
+              {isOwn && (
+                <button onClick={() => { onUnsend?.(message.id); setShowMenu(false); }}
+                  className="flex items-center gap-2 px-4 py-2.5 text-sm w-full text-left text-red-500 hover:bg-red-500/10 transition-colors">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                  Unsend
+                </button>
+              )}
+            </div>
           </div>
         </>
+      )}
+    </div>
+  );
+}
       )}
     </div>
   );
