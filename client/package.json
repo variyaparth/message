@@ -14,8 +14,8 @@
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
-    "predeploy": "npm run build",
-    "deploy": "gh-pages -d build"
+    "predeploy": "npm run build && touch build/.nojekyll",
+    "deploy": "gh-pages -d build --dotfiles"
   },
   "proxy": "http://localhost:3001",
   "browserslist": {
