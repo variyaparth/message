@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: quickchat-server
+    runtime: node
+    buildCommand: npm install
+    startCommand: node server/index.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: CLIENT_URL
+        value: https://variyaparth.github.io

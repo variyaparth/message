@@ -1,4 +1,5 @@
 import React from 'react';
+import { SERVER_URL } from '../socket';
 
 function formatTime(ts) {
   return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -46,9 +47,9 @@ export default function MessageBubble({ message, isOwn, isLight }) {
 
         {message.type === 'image' && message.fileUrl && (
           <div className="mb-1">
-            <img src={`http://localhost:3001${message.fileUrl}`} alt={message.fileName || 'Shared image'}
+            <img src={`${SERVER_URL}${message.fileUrl}`} alt={message.fileName || 'Shared image'}
               className="rounded-lg max-h-64 w-auto cursor-pointer hover:opacity-90 transition-opacity"
-              onClick={() => window.open(`http://localhost:3001${message.fileUrl}`, '_blank')} loading="lazy"
+              onClick={() => window.open(`${SERVER_URL}${message.fileUrl}`, '_blank')} loading="lazy"
             />
           </div>
         )}
@@ -56,7 +57,7 @@ export default function MessageBubble({ message, isOwn, isLight }) {
         {message.type === 'audio' && message.fileUrl && (
           <div className="mb-1">
             <audio controls className="max-w-full h-10" preload="metadata">
-              <source src={`http://localhost:3001${message.fileUrl}`} />
+              <source src={`${SERVER_URL}${message.fileUrl}`} />
             </audio>
           </div>
         )}

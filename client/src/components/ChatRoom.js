@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import socket from '../socket';
+import { SERVER_URL } from '../socket';
 import MessageBubble from './MessageBubble';
 import UserList from './UserList';
 import ShareModal from './ShareModal';
@@ -97,7 +98,7 @@ export default function ChatRoom({ roomId, username, onLeave }) {
     const formData = new FormData();
     formData.append('file', file);
     try {
-      const res = await fetch(`http://localhost:3001/api/rooms/${roomId}/upload`, { method: 'POST', body: formData });
+      const res = await fetch(`${SERVER_URL}/api/rooms/${roomId}/upload`, { method: 'POST', body: formData });
       if (!res.ok) throw new Error('Upload failed');
       const data = await res.json();
       socket.emit('send-message', { type: data.type, fileUrl: data.url, fileName: data.originalName });
@@ -111,7 +112,7 @@ export default function ChatRoom({ roomId, username, onLeave }) {
     const formData = new FormData();
     formData.append('file', blob, 'voice-note.webm');
     try {
-      const res = await fetch(`http://localhost:3001/api/rooms/${roomId}/upload`, { method: 'POST', body: formData });
+      const res = await fetch(`${SERVER_URL}/api/rooms/${roomId}/upload`, { method: 'POST', body: formData });
       if (!res.ok) throw new Error('Upload failed');
       const data = await res.json();
       socket.emit('send-message', { type: 'audio', fileUrl: data.url, fileName: 'Voice Note' });

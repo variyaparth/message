@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { BrowserRouter as Router, Routes, Route, useNavigate, useParams } from 'react-router-dom';
+import { HashRouter as Router, Routes, Route, useNavigate, useParams } from 'react-router-dom';
 import Lobby from './components/Lobby';
 import ChatRoom from './components/ChatRoom';
 
