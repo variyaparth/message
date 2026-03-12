@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>QuickChat</title>
+    <script>
+      // Redirect GitHub Pages 404 to the SPA
+      // Converts path-based routes to hash-based routes
+      var path = window.location.pathname;
+      var base = '/message';
+      var route = path.startsWith(base) ? path.slice(base.length) : path;
+      if (route && route !== '/') {
+        window.location.replace(base + '/#' + route + window.location.search);
+      } else {
+        window.location.replace(base + '/');
+      }
+    </script>
+  </head>
+  <body>
+  </body>
+</html>
