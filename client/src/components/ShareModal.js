@@ -3,7 +3,7 @@ import { QRCodeSVG } from 'qrcode.react';
 
 export default function ShareModal({ roomId, onClose, isLight }) {
   const [copied, setCopied] = useState(false);
-  const shareUrl = `${window.location.origin}/room/${roomId}`;
+  const shareUrl = `${window.location.origin}${process.env.PUBLIC_URL || ''}/#/room/${roomId}`;
 
   const handleCopy = async () => {
     try {
