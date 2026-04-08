@@ -21,7 +21,7 @@ export default function Lobby({ onJoin }) {
   const emitWithAck = (event, payload, onSuccess) => {
     if (!socket.connected) socket.connect();
 
-    socket.timeout(5000).emit(event, payload, (err, response) => {
+    socket.timeout(12000).emit(event, payload, (err, response) => {
       setLoading(false);
 
       if (err) {
