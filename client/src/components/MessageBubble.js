@@ -26,13 +26,31 @@ function getReplyPreviewText(replyTo) {
   return replyTo.text?.slice(0, 60) || '';
 }
 
-export default function MessageBubble({ message, isOwn, isLight, onReply, onUnsend }) {
+function renderTextWithMentions(text, isLight) {
+  if (!text) return text;
+  const parts = text.split(/(@\w+)/g);
+  return parts.map((part, idx) => {
+    if (part.startsWith('@')) {
+      return (
+        <span key={idx} className={`font-bold ${isLight ? 'text-blue-600' : 'text-blue-300'}`}>
+          {part}
+        </span>
+      );
+    }
+    return part;
+  });
+}
+
+export default function MessageBubble({ message, isOwn, isLight, onReply, onUnsend, onEdit, onReaction, onPin, roomCreator, currentUser }) {
   const [showMenu, setShowMenu] = useState(false);
   const [menuPos, setMenuPos] = useState({ x: 0, y: 0 });
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const longPressTimer = useRef(null);
   const touchStartX = useRef(0);
   const touchDeltaX = useRef(0);
   const bubbleRef = useRef(null);
+
+  const EMOJI_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🔥', '🙌', '✨'];
 
   if (message.type === 'system') {
     return (
@@ -160,6 +178,20 @@ export default function MessageBubble({ message, isOwn, isLight, onReply, onUnse
               className="rounded-lg max-h-64 w-auto cursor-pointer hover:opacity-90 transition-opacity"
               onClick={() => window.open(`${SERVER_URL}${message.fileUrl}`, '_blank')} loading="lazy"
             />
+            <div className="flex gap-2 mt-2">
+              <a href={`${SERVER_URL}${message.fileUrl}`} download={message.fileName}
+                className={`px-2 py-1 rounded-lg text-xs transition-colors ${
+                  isOwn ? 'bg-purple-400 hover:bg-purple-300' : isLight ? 'bg-gray-200 hover:bg-gray-300' : 'bg-white/20 hover:bg-white/30'
+                }`}>
+                ⬇️ Download
+              </a>
+              {isOwn && (
+                <button onClick={() => onUnsend?.(message.id)}
+                  className="px-2 py-1 rounded-lg text-xs bg-red-500/50 hover:bg-red-500 transition-colors">
+                  🗑️ Delete
+                </button>
+              )}
+            </div>
           </div>
         )}
 
@@ -168,16 +200,64 @@ export default function MessageBubble({ message, isOwn, isLight, onReply, onUnse
             <audio controls className="max-w-full h-10" preload="metadata">
               <source src={`${SERVER_URL}${message.fileUrl}`} />
             </audio>
+            <div className="flex gap-2 mt-2">
+              <a href={`${SERVER_URL}${message.fileUrl}`} download={message.fileName || 'voice-note.webm'}
+                className={`px-2 py-1 rounded-lg text-xs transition-colors ${
+                  isOwn ? 'bg-purple-400 hover:bg-purple-300' : isLight ? 'bg-gray-200 hover:bg-gray-300' : 'bg-white/20 hover:bg-white/30'
+                }`}>
+                ⬇️ Download
+              </a>
+              {isOwn && (
+                <button onClick={() => onUnsend?.(message.id)}
+                  className="px-2 py-1 rounded-lg text-xs bg-red-500/50 hover:bg-red-500 transition-colors">
+                  🗑️ Delete
+                </button>
+              )}
+            </div>
           </div>
         )}
 
         {message.type === 'text' && message.text && (
-          <p className="text-sm break-words whitespace-pre-wrap">{message.text}</p>
+          <p className="text-sm break-words whitespace-pre-wrap">{renderTextWithMentions(message.text, isOwn || !isLight)}</p>
         )}
 
-        <p className={`text-[10px] mt-0.5 ${isOwn ? 'text-purple-200 text-right' : isLight ? 'text-gray-400' : 'text-white/40'}`}>
-          {formatTime(message.timestamp)}
-        </p>
+        {/* Reactions display */}
+        {message.reactions && Object.keys(message.reactions).length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-2">
+            {Object.entries(message.reactions).map(([emoji, users]) => (
+              <button key={emoji} onClick={() => onReaction?.(message.id, emoji)}
+                className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs transition-opacity hover:opacity-70 ${
+                  users.includes(currentUser)
+                    ? isOwn ? 'bg-purple-400' : isLight ? 'bg-purple-200' : 'bg-white/20'
+                    : isOwn ? 'bg-purple-500/40' : isLight ? 'bg-gray-200' : 'bg-white/10'
+                }`}>
+                <span>{emoji}</span>
+                <span className="text-[10px]">{users.length > 1 ? users.length : ''}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1">
+            {message.isEdited && (
+              <span className={`text-[10px] ${isOwn ? 'text-purple-200' : isLight ? 'text-gray-400' : 'text-white/40'}`}>(edited)</span>
+            )}
+            {message.isPinned && (
+              <span className={`text-[10px] ${isOwn ? 'text-purple-200' : isLight ? 'text-gray-400' : 'text-white/40'}`}>📌</span>
+            )}
+          </div>
+          <p className={`text-[10px] ${isOwn ? 'text-purple-200 text-right' : isLight ? 'text-gray-400' : 'text-white/40'}`}>
+            {formatTime(message.timestamp)}
+          </p>
+        </div>
+
+        {isOwn && message.read && Object.keys(message.read).length > 0 && (
+          <div className="mt-1 flex items-center gap-1 justify-end">
+            <span className="text-[9px] text-purple-200">✓✓</span>
+            <span className="text-[9px] text-purple-200">{Object.keys(message.read).length}</span>
+          </div>
+        )}
       </div>
 
       {/* Reply button (desktop) - after bubble for others' messages */}
@@ -198,7 +278,7 @@ export default function MessageBubble({ message, isOwn, isLight, onReply, onUnse
         <>
           <div className="fixed inset-0 z-[100]" onClick={() => setShowMenu(false)} />
           <div className="fixed z-[101] rounded-xl shadow-2xl overflow-hidden border"
-            style={{ left: Math.min(menuPos.x, window.innerWidth - 160), top: Math.min(menuPos.y, window.innerHeight - 120) }}
+            style={{ left: Math.min(menuPos.x, window.innerWidth - 200), top: Math.min(menuPos.y, window.innerHeight - 200) }}
             onClick={() => setShowMenu(false)}>
             <div className={`${isLight ? 'bg-white border-gray-200' : 'bg-gray-800 border-white/10'}`}>
               <button onClick={() => { onReply?.(message); setShowMenu(false); }}
@@ -210,6 +290,41 @@ export default function MessageBubble({ message, isOwn, isLight, onReply, onUnse
                 </svg>
                 Reply
               </button>
+
+              {isOwn && message.type === 'text' && (
+                <button onClick={() => { onEdit?.(message); setShowMenu(false); }}
+                  className={`flex items-center gap-2 px-4 py-2.5 text-sm w-full text-left transition-colors ${
+                    isLight ? 'hover:bg-gray-100 text-gray-700' : 'hover:bg-white/10 text-white'
+                  }`}>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                  Edit
+                </button>
+              )}
+              
+              <button onClick={() => { setShowEmojiPicker(!showEmojiPicker); }}
+                className={`flex items-center gap-2 px-4 py-2.5 text-sm w-full text-left transition-colors ${
+                  isLight ? 'hover:bg-gray-100 text-gray-700' : 'hover:bg-white/10 text-white'
+                }`}>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                React
+              </button>
+
+              {roomCreator === currentUser && (
+                <button onClick={() => { onPin?.(message.id); setShowMenu(false); }}
+                  className={`flex items-center gap-2 px-4 py-2.5 text-sm w-full text-left transition-colors ${
+                    isLight ? 'hover:bg-gray-100 text-gray-700' : 'hover:bg-white/10 text-white'
+                  }`}>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h6a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                  </svg>
+                  {message.isPinned ? 'Unpin' : 'Pin'}
+                </button>
+              )}
+
               {isOwn && (
                 <button onClick={() => { onUnsend?.(message.id); setShowMenu(false); }}
                   className="flex items-center gap-2 px-4 py-2.5 text-sm w-full text-left text-red-500 hover:bg-red-500/10 transition-colors">
@@ -220,6 +335,20 @@ export default function MessageBubble({ message, isOwn, isLight, onReply, onUnse
                 </button>
               )}
             </div>
+            
+            {/* Emoji picker in context menu */}
+            {showEmojiPicker && (
+              <div className={`p-3 border-t flex flex-wrap gap-2 ${isLight ? 'bg-gray-50 border-gray-200' : 'bg-gray-700 border-gray-600'}`}>
+                {EMOJI_REACTIONS.map((emoji) => (
+                  <button key={emoji} onClick={() => { onReaction?.(message.id, emoji); setShowMenu(false); }}
+                    className={`p-2 rounded-lg transition-colors ${
+                      isLight ? 'hover:bg-gray-200' : 'hover:bg-gray-600'
+                    }`}>
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </>
       )}

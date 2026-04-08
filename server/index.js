@@ -69,6 +69,8 @@ app.use('/uploads', express.static(uploadsDir));
 
 // In-memory room store
 const rooms = new Map();
+const directMessages = new Map(); // Store: "user1:user2" => messages array
+const userSockets = new Map(); // Store: username => socketId for DMs
 
 function generateRoomId() {
   return crypto.randomBytes(6).toString('hex');
@@ -156,6 +158,7 @@ io.on('connection', (socket) => {
     currentRoom = roomId;
     currentUser = trimmedName;
     room.users.set(socket.id, trimmedName);
+    userSockets.set(trimmedName, socket.id); // Track for DMs
     socket.join(roomId);
 
     const recentMessages = room.messages.slice(-100);
@@ -178,20 +181,33 @@ io.on('connection', (socket) => {
     });
   });
 
-  socket.on('send-message', ({ text, type, fileUrl, fileName, replyTo }) => {
+  socket.on('send-message', ({ text, type, fileUrl, fileName, replyTo, reactions, isPin, pinned }) => {
     if (!currentRoom || !currentUser) return;
     const room = rooms.get(currentRoom);
     if (!room) return;
 
+    // Detect mentions in text
+    const mentionRegex = /@(\w+)/g;
+    const mentions = [];
+    let match;
+    const messageText = type === 'text' ? (text || '').slice(0, 5000) : '';
+    while ((match = mentionRegex.exec(messageText)) !== null) {
+      mentions.push(match[1]);
+    }
+
     const message = {
       id: crypto.randomBytes(8).toString('hex'),
       username: currentUser,
-      text: type === 'text' ? (text || '').slice(0, 5000) : '',
+      text: messageText,
       type: type || 'text',
       fileUrl: fileUrl || null,
       fileName: fileName || null,
       replyTo: replyTo || null,
       timestamp: Date.now(),
+      reactions: reactions || {},
+      mentions: mentions,
+      isPinned: isPin || pinned || false,
+      read: {},
     };
 
     room.messages.push(message);
@@ -200,6 +216,21 @@ io.on('connection', (socket) => {
     }
 
     io.to(currentRoom).emit('new-message', message);
+
+    // Notify mentioned users
+    if (mentions.length > 0) {
+      const connectedUsers = Array.from(room.users.values());
+      mentions.forEach((mention) => {
+        if (connectedUsers.includes(mention) && mention !== currentUser) {
+          io.to(currentRoom).emit('user-mentioned', {
+            mentionedUser: mention,
+            mentionedBy: currentUser,
+            messageId: message.id,
+            preview: messageText.slice(0, 50),
+          });
+        }
+      });
+    }
   });
 
   socket.on('unsend-message', ({ messageId }) => {
@@ -212,6 +243,170 @@ io.on('connection', (socket) => {
 
     room.messages.splice(msgIndex, 1);
     io.to(currentRoom).emit('message-unsent', { messageId });
+  });
+
+  socket.on('edit-message', ({ messageId, text }) => {
+    if (!currentRoom || !currentUser) return;
+    const room = rooms.get(currentRoom);
+    if (!room) return;
+    if (!messageId || typeof text !== 'string') return;
+
+    const msg = room.messages.find((m) => m.id === messageId);
+    if (!msg) return;
+    if (msg.username !== currentUser) return;
+    if (msg.type !== 'text') return;
+
+    const nextText = text.slice(0, 5000).trim();
+    if (!nextText) return;
+
+    msg.text = nextText;
+    msg.editedAt = Date.now();
+    msg.isEdited = true;
+
+    io.to(currentRoom).emit('message-edited', {
+      messageId: msg.id,
+      text: msg.text,
+      editedAt: msg.editedAt,
+      isEdited: true,
+    });
+  });
+
+  socket.on('set-reaction', ({ messageId, emoji }) => {
+    if (!currentRoom || !currentUser) return;
+    const room = rooms.get(currentRoom);
+    if (!room) return;
+
+    const message = room.messages.find((m) => m.id === messageId);
+    if (!message) return;
+
+    if (!message.reactions) message.reactions = {};
+    if (!message.reactions[emoji]) message.reactions[emoji] = [];
+
+    if (message.reactions[emoji].includes(currentUser)) {
+      message.reactions[emoji] = message.reactions[emoji].filter((u) => u !== currentUser);
+      if (message.reactions[emoji].length === 0) delete message.reactions[emoji];
+    } else {
+      message.reactions[emoji].push(currentUser);
+    }
+
+    io.to(currentRoom).emit('reaction-updated', { messageId, reactions: message.reactions });
+  });
+
+  socket.on('pin-message', ({ messageId }) => {
+    if (!currentRoom || !currentUser) return;
+    const room = rooms.get(currentRoom);
+    if (!room || room.createdBy !== currentUser) return;
+
+    const message = room.messages.find((m) => m.id === messageId);
+    if (!message) return;
+
+    message.isPinned = !message.isPinned;
+    room.pinnedMessages = room.pinnedMessages || [];
+    if (message.isPinned && !room.pinnedMessages.includes(messageId)) {
+      room.pinnedMessages.push(messageId);
+    } else {
+      room.pinnedMessages = room.pinnedMessages.filter((id) => id !== messageId);
+    }
+
+    io.to(currentRoom).emit('message-pinned', { messageId, isPinned: message.isPinned, pinnedMessages: room.pinnedMessages });
+  });
+
+  socket.on('mark-as-read', ({ messageId }) => {
+    if (!currentRoom || !currentUser) return;
+    const room = rooms.get(currentRoom);
+    if (!room) return;
+
+    const message = room.messages.find((m) => m.id === messageId);
+    if (!message) return;
+
+    if (!message.read) message.read = {};
+    message.read[currentUser] = Date.now();
+
+    io.to(currentRoom).emit('message-read-updated', { messageId, read: message.read });
+  });
+
+  socket.on('get-user-status', (callback) => {
+    if (!currentRoom) return;
+    const room = rooms.get(currentRoom);
+    if (!room) return;
+
+    const statuses = {};
+    Array.from(room.users.entries()).forEach(([socketId, username]) => {
+      statuses[username] = 'online';
+    });
+
+    callback(statuses);
+  });
+
+  socket.on('send-dm', ({ recipientUsername, text }) => {
+    if (!currentUser) return;
+    const dmKey = [currentUser, recipientUsername].sort().join(':');
+    
+    if (!directMessages.has(dmKey)) {
+      directMessages.set(dmKey, []);
+    }
+
+    const dmMessage = {
+      id: crypto.randomBytes(8).toString('hex'),
+      from: currentUser,
+      to: recipientUsername,
+      text: text.slice(0, 5000),
+      timestamp: Date.now(),
+      read: false,
+    };
+
+    directMessages.get(dmKey).push(dmMessage);
+    if (directMessages.get(dmKey).length > 100) {
+      directMessages.set(dmKey, directMessages.get(dmKey).slice(-100));
+    }
+
+    // Find recipient socket and send message
+    const recipientSocketId = userSockets.get(recipientUsername);
+    if (recipientSocketId) {
+      io.to(recipientSocketId).emit('dm-received', dmMessage);
+    }
+
+    // Also emit to sender for confirmation
+    socket.emit('dm-sent', dmMessage);
+  });
+
+  socket.on('get-dms', ({ otherUser }, callback) => {
+    if (!currentUser) return;
+    const dmKey = [currentUser, otherUser].sort().join(':');
+    const messages = directMessages.get(dmKey) || [];
+    callback(messages);
+  });
+
+  socket.on('mark-dm-read', ({ from }) => {
+    if (!currentUser) return;
+    const dmKey = [currentUser, from].sort().join(':');
+    const messages = directMessages.get(dmKey);
+    if (!messages) return;
+
+    messages.forEach((message) => {
+      if (message.from === from && message.to === currentUser) {
+        message.read = true;
+      }
+    });
+  });
+
+  socket.on('get-dm-list', (callback) => {
+    if (!currentUser) return;
+    const dmList = [];
+    directMessages.forEach((messages, key) => {
+      const users = key.split(':');
+      if (users.includes(currentUser)) {
+        const otherUser = users[0] === currentUser ? users[1] : users[0];
+        const lastMsg = messages[messages.length - 1];
+        dmList.push({
+          username: otherUser,
+          lastMessage: lastMsg.text,
+          timestamp: lastMsg.timestamp,
+          unread: messages.filter((m) => m.to === currentUser && !m.read).length,
+        });
+      }
+    });
+    callback(dmList.sort((a, b) => b.timestamp - a.timestamp));
   });
 
   socket.on('typing', (isTyping) => {
@@ -254,6 +449,7 @@ io.on('connection', (socket) => {
           }, 5 * 60 * 1000);
         }
       }
+      userSockets.delete(currentUser);
     }
   });
 });
