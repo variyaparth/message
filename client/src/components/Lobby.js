@@ -18,23 +18,36 @@ export default function Lobby({ onJoin }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  const emitWithAck = (event, payload, onSuccess) => {
+    if (!socket.connected) socket.connect();
+
+    socket.timeout(5000).emit(event, payload, (err, response) => {
+      setLoading(false);
+
+      if (err) {
+        setError('Connection is slow. Please try again.');
+        return;
+      }
+
+      if (response?.error) {
+        setError(response.error);
+        return;
+      }
+
+      onSuccess(response);
+    });
+  };
+
   const handleCreate = (e) => {
     e.preventDefault();
     if (!username.trim()) return;
     setLoading(true);
     setError('');
 
-    socket.emit(
+    emitWithAck(
       'create-room',
       { username: username.trim(), roomName: roomName.trim() || 'Chat Room', theme: selectedTheme },
-      (response) => {
-        setLoading(false);
-        if (response.error) {
-          setError(response.error);
-        } else {
-          onJoin(username.trim(), response.roomId);
-        }
-      }
+      (response) => onJoin(username.trim(), response.roomId)
     );
   };
 
@@ -48,14 +61,11 @@ export default function Lobby({ onJoin }) {
     const urlMatch = roomId.match(/\/room\/([a-f0-9]+)/i);
     if (urlMatch) roomId = urlMatch[1];
 
-    socket.emit('join-room', { roomId, username: username.trim() }, (response) => {
-      setLoading(false);
-      if (response.error) {
-        setError(response.error);
-      } else {
-        onJoin(username.trim(), roomId);
-      }
-    });
+    emitWithAck(
+      'join-room',
+      { roomId, username: username.trim() },
+      () => onJoin(username.trim(), roomId)
+    );
   };
 
   return (

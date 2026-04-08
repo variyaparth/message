@@ -28,7 +28,6 @@ export default function ChatRoom({ roomId, username, onLeave }) {
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState('');
   const [replyTo, setReplyTo] = useState(null);
-  const [searchFilter, setSearchFilter] = useState('');
   const [mentionSuggestions, setMentionSuggestions] = useState([]);
   const [showMentions, setShowMentions] = useState(false);
   const [showPinned, setShowPinned] = useState(false);
@@ -239,11 +238,6 @@ export default function ChatRoom({ roomId, username, onLeave }) {
     return messages.filter((m) => m.isPinned);
   };
 
-  const getFilteredMessages = () => {
-    if (!searchFilter) return messages;
-    return messages.filter((m) => m.text && m.text.toLowerCase().includes(searchFilter.toLowerCase()));
-  };
-
   const handleFileUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -346,19 +340,6 @@ export default function ChatRoom({ roomId, username, onLeave }) {
       <div className="flex flex-1 overflow-hidden">
         {/* Messages */}
         <div className="flex-1 flex flex-col min-w-0">
-          {/* Search bar */}
-          <div className={`px-4 py-2 border-b ${isLight ? 'bg-white/80 border-gray-200' : 'bg-black/20 border-white/10'} backdrop-blur-xl`}>
-            <input
-              type="text"
-              placeholder="🔍 Search messages..."
-              value={searchFilter}
-              onChange={(e) => setSearchFilter(e.target.value)}
-              className={`w-full px-3 py-1.5 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-400 ${
-                isLight ? 'bg-gray-100 border-gray-200 text-gray-900 placeholder-gray-400' : 'bg-white/10 border-white/20 text-white placeholder-white/40'
-              }`}
-            />
-          </div>
-
           {/* Pinned messages panel */}
           {showPinned && getPinnedMessages().length > 0 && (
             <div className={`px-4 py-3 max-h-40 overflow-y-auto border-b ${isLight ? 'bg-yellow-50 border-yellow-200' : 'bg-yellow-900/20 border-yellow-800/30'}`}>
@@ -373,15 +354,15 @@ export default function ChatRoom({ roomId, username, onLeave }) {
           )}
 
           <div className="flex-1 overflow-y-auto px-4 py-3 space-y-1">
-            {getFilteredMessages().length === 0 && connected && (
+            {messages.length === 0 && connected && (
               <div className="flex items-center justify-center h-full">
                 <div className="text-center">
-                  <div className="text-4xl mb-3">{searchFilter ? '🔍' : '👋'}</div>
-                  <p className={`${isLight ? 'text-gray-500' : 'text-white/50'}`}>{searchFilter ? 'No messages found' : 'No messages yet. Say hello!'}</p>
+                  <div className="text-4xl mb-3">👋</div>
+                  <p className={`${isLight ? 'text-gray-500' : 'text-white/50'}`}>No messages yet. Say hello!</p>
                 </div>
               </div>
             )}
-            {getFilteredMessages().map((msg) => (
+            {messages.map((msg) => (
               <MessageBubble key={msg.id} message={msg} isOwn={msg.username === username} isLight={isLight}
                 onReply={(m) => setReplyTo(m)} onUnsend={handleUnsend} 
                 onEdit={handleEdit}
