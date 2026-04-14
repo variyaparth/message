@@ -18,49 +18,14 @@ export default function Lobby({ onJoin }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const waitForSocketConnection = () => new Promise((resolve, reject) => {
-    if (socket.connected) {
-      resolve();
-      return;
-    }
+  const emitWithAck = (event, payload, onSuccess) => {
+    if (!socket.connected) socket.connect();
 
-    const timeoutId = setTimeout(() => {
-      socket.off('connect', handleConnect);
-      socket.off('connect_error', handleConnectError);
-      reject(new Error('connect-timeout'));
-    }, 30000);
-
-    const handleConnect = () => {
-      clearTimeout(timeoutId);
-      socket.off('connect_error', handleConnectError);
-      resolve();
-    };
-
-    const handleConnectError = () => {
-      clearTimeout(timeoutId);
-      socket.off('connect', handleConnect);
-      reject(new Error('connect-error'));
-    };
-
-    socket.once('connect', handleConnect);
-    socket.once('connect_error', handleConnectError);
-    socket.connect();
-  });
-
-  const emitWithAck = async (event, payload, onSuccess) => {
-    try {
-      await waitForSocketConnection();
-    } catch {
-      setLoading(false);
-      setError('Unable to connect to the chat server. Please try again.');
-      return;
-    }
-
-    socket.timeout(30000).emit(event, payload, (err, response) => {
+    socket.timeout(12000).emit(event, payload, (err, response) => {
       setLoading(false);
 
       if (err) {
-        setError('The server is taking too long to respond. Please try again.');
+        setError('Connection is slow. Please try again.');
         return;
       }
 
