@@ -18,14 +18,49 @@ export default function Lobby({ onJoin }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const emitWithAck = (event, payload, onSuccess) => {
-    if (!socket.connected) socket.connect();
+  const ensureSocketConnected = () => new Promise((resolve, reject) => {
+    if (socket.connected) {
+      resolve();
+      return;
+    }
 
-    socket.timeout(12000).emit(event, payload, (err, response) => {
+    const timeoutId = setTimeout(() => {
+      socket.off('connect', onConnect);
+      socket.off('connect_error', onError);
+      reject(new Error('Connection failed'));
+    }, 15000);
+
+    const onConnect = () => {
+      clearTimeout(timeoutId);
+      socket.off('connect_error', onError);
+      resolve();
+    };
+
+    const onError = () => {
+      clearTimeout(timeoutId);
+      socket.off('connect', onConnect);
+      reject(new Error('Connection failed'));
+    };
+
+    socket.once('connect', onConnect);
+    socket.once('connect_error', onError);
+    if (!socket.connected) socket.connect();
+  });
+
+  const emitWithAck = async (event, payload, onSuccess) => {
+    try {
+      await ensureSocketConnected();
+    } catch {
+      setLoading(false);
+      setError('Unable to connect to server. Please check your connection.');
+      return;
+    }
+
+    socket.timeout(15000).emit(event, payload, (err, response) => {
       setLoading(false);
 
       if (err) {
-        setError('Connection is slow. Please try again.');
+        setError('Server is slow to respond. Please try again.');
         return;
       }
 
