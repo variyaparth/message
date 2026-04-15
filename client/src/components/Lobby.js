@@ -50,7 +50,15 @@ export default function Lobby({ onJoin }) {
   const emitWithAck = async (event, payload, onSuccess) => {
     try {
       await ensureSocketConnected();
-    } catch {
+    } catch (error) {
+      console.error('[lobby] socket connection failed', {
+        event,
+        payload,
+        socketConnected: socket.connected,
+        socketId: socket.id,
+        serverUrl: socket.io?.uri,
+        errorMessage: error?.message,
+      });
       setLoading(false);
       setError('Unable to connect to server. Please check your connection.');
       return;
@@ -60,6 +68,14 @@ export default function Lobby({ onJoin }) {
       setLoading(false);
 
       if (err) {
+        console.error('[lobby] socket ack timeout', {
+          event,
+          payload,
+          socketConnected: socket.connected,
+          socketId: socket.id,
+          serverUrl: socket.io?.uri,
+          error: err,
+        });
         setError('Server is slow to respond. Please try again.');
         return;
       }
