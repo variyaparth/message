@@ -42,6 +42,14 @@ app.use((req, _res, next) => {
   next();
 });
 
+app.get('/api/health', (_req, res) => {
+  res.json({
+    ok: true,
+    service: 'quickchat-server',
+    now: Date.now(),
+  });
+});
+
 const uploadLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 30,

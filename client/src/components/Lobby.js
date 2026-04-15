@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import socket from '../socket';
+import socket, { checkServerHealth } from '../socket';
 
 const THEMES = [
   { id: 'dark', label: '🌙 Dark' },
@@ -51,6 +51,7 @@ export default function Lobby({ onJoin }) {
     try {
       await ensureSocketConnected();
     } catch (error) {
+      const health = await checkServerHealth();
       console.error('[lobby] socket connection failed', {
         event,
         payload,
@@ -58,9 +59,14 @@ export default function Lobby({ onJoin }) {
         socketId: socket.id,
         serverUrl: socket.io?.uri,
         errorMessage: error?.message,
+        serverHealth: health,
       });
       setLoading(false);
-      setError('Unable to connect to server. Please check your connection.');
+      if (!health.ok) {
+        setError('Server is unreachable right now. Please verify backend deployment and REACT_APP_SERVER_URL.');
+      } else {
+        setError('Unable to connect to server. Please check your connection.');
+      }
       return;
     }
 
