@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { HashRouter as Router, Routes, Route, useNavigate, useParams } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, useNavigate, useParams } from 'react-router-dom';
 import Lobby from './components/Lobby';
 import ChatRoom from './components/ChatRoom';
 
@@ -15,7 +15,10 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/" element={<Lobby onJoin={handleJoinRoom} />} />
-      <Route path="/room/:roomId" element={<ChatRoomWrapper username={username} />} />
+      <Route
+        path="/room/:roomId"
+        element={<ChatRoomWrapper username={username} />}
+      />
     </Routes>
   );
 }
@@ -27,7 +30,11 @@ function ChatRoomWrapper({ username }) {
 
   if (!name) {
     return (
-      <JoinPrompt roomId={roomId} onJoin={(n) => setName(n)} onBack={() => navigate('/')} />
+      <JoinPrompt
+        roomId={roomId}
+        onJoin={(n) => setName(n)}
+        onBack={() => navigate('/')}
+      />
     );
   }
 
@@ -58,10 +65,18 @@ function JoinPrompt({ roomId, onJoin, onBack }) {
             autoFocus
           />
           <div className="flex gap-3">
-            <button type="button" onClick={onBack} className="flex-1 py-3 rounded-xl bg-white/10 text-white hover:bg-white/20 transition-colors">
+            <button
+              type="button"
+              onClick={onBack}
+              className="flex-1 py-3 rounded-xl bg-white/10 text-white hover:bg-white/20 transition-colors"
+            >
               Back
             </button>
-            <button type="submit" disabled={!name.trim()} className="flex-1 py-3 rounded-xl bg-purple-600 text-white font-semibold hover:bg-purple-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+            <button
+              type="submit"
+              disabled={!name.trim()}
+              className="flex-1 py-3 rounded-xl bg-purple-600 text-white font-semibold hover:bg-purple-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
               Join
             </button>
           </div>
@@ -72,8 +87,10 @@ function JoinPrompt({ roomId, onJoin, onBack }) {
 }
 
 export default function App() {
+  const basename = process.env.NODE_ENV === 'production' ? '/message' : '/';
+
   return (
-    <Router>
+    <Router basename={basename}>
       <AppRoutes />
     </Router>
   );

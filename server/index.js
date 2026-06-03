@@ -12,43 +12,18 @@ const crypto = require('crypto');
 const app = express();
 const server = http.createServer(app);
 
-const defaultClientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
-const allowedOrigins = [
-  defaultClientUrl,
-  'http://localhost:3000',
-  'http://127.0.0.1:3000',
-  'https://variyaparth.github.io',
-  'https://variyaparth.github.io/message',
-].filter(Boolean);
-
 const io = new Server(server, {
   cors: {
-    origin: allowedOrigins,
+    origin: process.env.CLIENT_URL || 'http://localhost:3000',
     methods: ['GET', 'POST'],
   },
-  maxHttpBufferSize: 10 * 1024 * 1024,
+  maxHttpBufferSize: 10 * 1024 * 1024, // 10MB
 });
 
-// Security
+// Security middleware
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
-app.use(cors({ origin: allowedOrigins }));
+app.use(cors({ origin: process.env.CLIENT_URL || 'http://localhost:3000' }));
 app.use(express.json());
-
-app.use((req, _res, next) => {
-  console.info('[http]', req.method, req.originalUrl, {
-    origin: req.headers.origin,
-    ip: req.ip,
-  });
-  next();
-});
-
-app.get('/api/health', (_req, res) => {
-  res.json({
-    ok: true,
-    service: 'quickchat-server',
-    now: Date.now(),
-  });
-});
 
 const uploadLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -60,7 +35,7 @@ const uploadLimiter = rateLimit({
 const uploadsDir = path.join(__dirname, '..', 'uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
-// File validation
+// Multer config with file validation
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 const ALLOWED_AUDIO_TYPES = ['audio/webm', 'audio/ogg', 'audio/mp4', 'audio/mpeg', 'audio/wav'];
 const ALLOWED_TYPES = [...ALLOWED_IMAGE_TYPES, ...ALLOWED_AUDIO_TYPES];
@@ -79,7 +54,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 10 * 1024 * 1024 },
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
   fileFilter: (_req, file, cb) => {
     if (ALLOWED_TYPES.includes(file.mimetype)) {
       cb(null, true);
@@ -94,15 +69,15 @@ app.use('/uploads', express.static(uploadsDir));
 
 // In-memory room store
 const rooms = new Map();
-const directMessages = new Map(); // Store: "user1:user2" => messages array
-const userSockets = new Map(); // Store: username => socketId for DMs
 
 function generateRoomId() {
   return crypto.randomBytes(6).toString('hex');
 }
 
+// Room validation middleware
 function validateRoomExists(req, res, next) {
-  if (!rooms.has(req.params.roomId)) {
+  const { roomId } = req.params;
+  if (!rooms.has(roomId)) {
     return res.status(404).json({ error: 'Room not found' });
   }
   next();
@@ -128,7 +103,7 @@ app.post('/api/rooms/:roomId/upload', uploadLimiter, validateRoomExists, upload.
   res.json({ url: fileUrl, type: fileType, originalName: req.file.originalname });
 });
 
-// Production static files
+// Serve React build in production
 if (process.env.NODE_ENV === 'production') {
   app.use(express.static(path.join(__dirname, '..', 'client', 'build')));
   app.get('*', (_req, res) => {
@@ -170,7 +145,18 @@ io.on('connection', (socket) => {
 
     const room = rooms.get(roomId);
     const trimmedName = username.trim();
+    const normalizedName = trimmedName.toLowerCase();
 
+    // Do not allow duplicate display names in the same room.
+    const usernameTaken = Array.from(room.users.entries()).some(([id, name]) => {
+      return id !== socket.id && String(name).trim().toLowerCase() === normalizedName;
+    });
+
+    if (usernameTaken) {
+      return callback({ error: 'Username already in use in this room' });
+    }
+
+    // Leave previous room if any
     if (currentRoom) {
       socket.leave(currentRoom);
       const prevRoom = rooms.get(currentRoom);
@@ -183,9 +169,9 @@ io.on('connection', (socket) => {
     currentRoom = roomId;
     currentUser = trimmedName;
     room.users.set(socket.id, trimmedName);
-    userSockets.set(trimmedName, socket.id); // Track for DMs
     socket.join(roomId);
 
+    // Send last 100 messages
     const recentMessages = room.messages.slice(-100);
 
     callback({
@@ -206,232 +192,28 @@ io.on('connection', (socket) => {
     });
   });
 
-  socket.on('send-message', ({ text, type, fileUrl, fileName, replyTo, reactions, isPin, pinned }) => {
+  socket.on('send-message', ({ text, type, fileUrl, fileName }) => {
     if (!currentRoom || !currentUser) return;
     const room = rooms.get(currentRoom);
     if (!room) return;
 
-    // Detect mentions in text
-    const mentionRegex = /@(\w+)/g;
-    const mentions = [];
-    let match;
-    const messageText = type === 'text' ? (text || '').slice(0, 5000) : '';
-    while ((match = mentionRegex.exec(messageText)) !== null) {
-      mentions.push(match[1]);
-    }
-
     const message = {
       id: crypto.randomBytes(8).toString('hex'),
       username: currentUser,
-      text: messageText,
+      text: type === 'text' ? (text || '').slice(0, 5000) : '',
       type: type || 'text',
       fileUrl: fileUrl || null,
       fileName: fileName || null,
-      replyTo: replyTo || null,
       timestamp: Date.now(),
-      reactions: reactions || {},
-      mentions: mentions,
-      isPinned: isPin || pinned || false,
-      read: {},
     };
 
     room.messages.push(message);
+    // Cap messages at 500
     if (room.messages.length > 500) {
       room.messages = room.messages.slice(-500);
     }
 
     io.to(currentRoom).emit('new-message', message);
-
-    // Notify mentioned users
-    if (mentions.length > 0) {
-      const connectedUsers = Array.from(room.users.values());
-      mentions.forEach((mention) => {
-        if (connectedUsers.includes(mention) && mention !== currentUser) {
-          io.to(currentRoom).emit('user-mentioned', {
-            mentionedUser: mention,
-            mentionedBy: currentUser,
-            messageId: message.id,
-            preview: messageText.slice(0, 50),
-          });
-        }
-      });
-    }
-  });
-
-  socket.on('unsend-message', ({ messageId }) => {
-    if (!currentRoom || !currentUser) return;
-    const room = rooms.get(currentRoom);
-    if (!room) return;
-
-    const msgIndex = room.messages.findIndex((m) => m.id === messageId && m.username === currentUser);
-    if (msgIndex === -1) return;
-
-    room.messages.splice(msgIndex, 1);
-    io.to(currentRoom).emit('message-unsent', { messageId });
-  });
-
-  socket.on('edit-message', ({ messageId, text }) => {
-    if (!currentRoom || !currentUser) return;
-    const room = rooms.get(currentRoom);
-    if (!room) return;
-    if (!messageId || typeof text !== 'string') return;
-
-    const msg = room.messages.find((m) => m.id === messageId);
-    if (!msg) return;
-    if (msg.username !== currentUser) return;
-    if (msg.type !== 'text') return;
-
-    const nextText = text.slice(0, 5000).trim();
-    if (!nextText) return;
-
-    msg.text = nextText;
-    msg.editedAt = Date.now();
-    msg.isEdited = true;
-
-    io.to(currentRoom).emit('message-edited', {
-      messageId: msg.id,
-      text: msg.text,
-      editedAt: msg.editedAt,
-      isEdited: true,
-    });
-  });
-
-  socket.on('set-reaction', ({ messageId, emoji }) => {
-    if (!currentRoom || !currentUser) return;
-    const room = rooms.get(currentRoom);
-    if (!room) return;
-
-    const message = room.messages.find((m) => m.id === messageId);
-    if (!message) return;
-
-    if (!message.reactions) message.reactions = {};
-    if (!message.reactions[emoji]) message.reactions[emoji] = [];
-
-    if (message.reactions[emoji].includes(currentUser)) {
-      message.reactions[emoji] = message.reactions[emoji].filter((u) => u !== currentUser);
-      if (message.reactions[emoji].length === 0) delete message.reactions[emoji];
-    } else {
-      message.reactions[emoji].push(currentUser);
-    }
-
-    io.to(currentRoom).emit('reaction-updated', { messageId, reactions: message.reactions });
-  });
-
-  socket.on('pin-message', ({ messageId }) => {
-    if (!currentRoom || !currentUser) return;
-    const room = rooms.get(currentRoom);
-    if (!room || room.createdBy !== currentUser) return;
-
-    const message = room.messages.find((m) => m.id === messageId);
-    if (!message) return;
-
-    message.isPinned = !message.isPinned;
-    room.pinnedMessages = room.pinnedMessages || [];
-    if (message.isPinned && !room.pinnedMessages.includes(messageId)) {
-      room.pinnedMessages.push(messageId);
-    } else {
-      room.pinnedMessages = room.pinnedMessages.filter((id) => id !== messageId);
-    }
-
-    io.to(currentRoom).emit('message-pinned', { messageId, isPinned: message.isPinned, pinnedMessages: room.pinnedMessages });
-  });
-
-  socket.on('mark-as-read', ({ messageId }) => {
-    if (!currentRoom || !currentUser) return;
-    const room = rooms.get(currentRoom);
-    if (!room) return;
-
-    const message = room.messages.find((m) => m.id === messageId);
-    if (!message) return;
-
-    if (!message.read) message.read = {};
-    message.read[currentUser] = Date.now();
-
-    io.to(currentRoom).emit('message-read-updated', { messageId, read: message.read });
-  });
-
-  socket.on('get-user-status', (callback) => {
-    if (!currentRoom) return;
-    const room = rooms.get(currentRoom);
-    if (!room) return;
-
-    const statuses = {};
-    Array.from(room.users.entries()).forEach(([socketId, username]) => {
-      statuses[username] = 'online';
-    });
-
-    callback(statuses);
-  });
-
-  socket.on('send-dm', ({ recipientUsername, text }) => {
-    if (!currentUser) return;
-    const dmKey = [currentUser, recipientUsername].sort().join(':');
-    
-    if (!directMessages.has(dmKey)) {
-      directMessages.set(dmKey, []);
-    }
-
-    const dmMessage = {
-      id: crypto.randomBytes(8).toString('hex'),
-      from: currentUser,
-      to: recipientUsername,
-      text: text.slice(0, 5000),
-      timestamp: Date.now(),
-      read: false,
-    };
-
-    directMessages.get(dmKey).push(dmMessage);
-    if (directMessages.get(dmKey).length > 100) {
-      directMessages.set(dmKey, directMessages.get(dmKey).slice(-100));
-    }
-
-    // Find recipient socket and send message
-    const recipientSocketId = userSockets.get(recipientUsername);
-    if (recipientSocketId) {
-      io.to(recipientSocketId).emit('dm-received', dmMessage);
-    }
-
-    // Also emit to sender for confirmation
-    socket.emit('dm-sent', dmMessage);
-  });
-
-  socket.on('get-dms', ({ otherUser }, callback) => {
-    if (!currentUser) return;
-    const dmKey = [currentUser, otherUser].sort().join(':');
-    const messages = directMessages.get(dmKey) || [];
-    callback(messages);
-  });
-
-  socket.on('mark-dm-read', ({ from }) => {
-    if (!currentUser) return;
-    const dmKey = [currentUser, from].sort().join(':');
-    const messages = directMessages.get(dmKey);
-    if (!messages) return;
-
-    messages.forEach((message) => {
-      if (message.from === from && message.to === currentUser) {
-        message.read = true;
-      }
-    });
-  });
-
-  socket.on('get-dm-list', (callback) => {
-    if (!currentUser) return;
-    const dmList = [];
-    directMessages.forEach((messages, key) => {
-      const users = key.split(':');
-      if (users.includes(currentUser)) {
-        const otherUser = users[0] === currentUser ? users[1] : users[0];
-        const lastMsg = messages[messages.length - 1];
-        dmList.push({
-          username: otherUser,
-          lastMessage: lastMsg.text,
-          timestamp: lastMsg.timestamp,
-          unread: messages.filter((m) => m.to === currentUser && !m.read).length,
-        });
-      }
-    });
-    callback(dmList.sort((a, b) => b.timestamp - a.timestamp));
   });
 
   socket.on('typing', (isTyping) => {
@@ -460,13 +242,14 @@ io.on('connection', (socket) => {
           users: Array.from(room.users.values()),
         });
 
+        // Clean up empty rooms after 5 minutes
         if (room.users.size === 0) {
-          const roomToClean = currentRoom;
           setTimeout(() => {
-            const r = rooms.get(roomToClean);
+            const r = rooms.get(currentRoom);
             if (r && r.users.size === 0) {
-              rooms.delete(roomToClean);
-              const roomDir = path.join(uploadsDir, roomToClean);
+              rooms.delete(currentRoom);
+              // Clean up uploaded files
+              const roomDir = path.join(uploadsDir, currentRoom);
               if (fs.existsSync(roomDir)) {
                 fs.rmSync(roomDir, { recursive: true, force: true });
               }
@@ -474,17 +257,11 @@ io.on('connection', (socket) => {
           }, 5 * 60 * 1000);
         }
       }
-      userSockets.delete(currentUser);
     }
   });
 });
 
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
-  console.log('Server running', {
-    port: PORT,
-    nodeEnv: process.env.NODE_ENV || 'development',
-    clientUrl: defaultClientUrl,
-    allowedOrigins,
-  });
+  console.log(`Server running on port ${PORT}`);
 });
