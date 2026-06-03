@@ -1,5 +1,5 @@
 {
-  "name": "quickchat",
+  "name": "message",
   "version": "1.0.0",
   "description": "Real-time messaging app with temporary chat rooms",
   "main": "server/index.js",
@@ -9,6 +9,9 @@
     "install-all": "npm install && cd client && npm install",
     "dev": "concurrently \"npm run server\" \"npm run client\""
   },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
   "dependencies": {
     "express": "^4.18.2",
     "socket.io": "^4.7.4",

@@ -55,21 +55,35 @@ export default function VoiceRecorder({ onSend, isLight }) {
     setDuration(0);
   };
 
-  const formatDuration = (s) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
+  const formatDuration = (s) => {
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return `${m}:${sec.toString().padStart(2, '0')}`;
+  };
 
   if (recording) {
     return (
       <div className="flex items-center gap-2">
-        <button type="button" onClick={cancelRecording} className="p-2.5 rounded-xl text-red-400 hover:bg-red-500/20 transition-colors" title="Cancel">
+        <button
+          onClick={cancelRecording}
+          className="p-2.5 rounded-xl text-red-400 hover:bg-red-500/20 transition-colors"
+          title="Cancel"
+        >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
           </svg>
         </button>
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-          <span className={`text-sm font-mono ${isLight ? 'text-gray-700' : 'text-white'}`}>{formatDuration(duration)}</span>
+          <span className={`text-sm font-mono ${isLight ? 'text-gray-700' : 'text-white'}`}>
+            {formatDuration(duration)}
+          </span>
         </div>
-        <button type="button" onClick={stopRecording} className="p-2.5 rounded-xl bg-green-600 text-white hover:bg-green-500 transition-colors" title="Send">
+        <button
+          onClick={stopRecording}
+          className="p-2.5 rounded-xl bg-green-600 text-white hover:bg-green-500 transition-colors"
+          title="Send Voice Note"
+        >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
           </svg>
@@ -79,7 +93,11 @@ export default function VoiceRecorder({ onSend, isLight }) {
   }
 
   return (
-    <button type="button" onClick={startRecording} className={`p-2.5 rounded-xl transition-colors shrink-0 ${isLight ? 'hover:bg-gray-100 text-gray-500' : 'hover:bg-white/10 text-white/50'}`} title="Record Voice Note">
+    <button
+      onClick={startRecording}
+      className={`p-2.5 rounded-xl transition-colors shrink-0 ${isLight ? 'hover:bg-gray-100 text-gray-500' : 'hover:bg-white/10 text-white/50'}`}
+      title="Record Voice Note"
+    >
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
       </svg>

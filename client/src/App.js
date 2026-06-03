@@ -16,7 +16,7 @@ function AppRoutes() {
     <Routes>
       <Route path="/" element={<Lobby onJoin={handleJoinRoom} />} />
       <Route
-        path="/room/:roomId"
+        path="/room/:roomId" 
         element={<ChatRoomWrapper username={username} />}
       />
     </Routes>

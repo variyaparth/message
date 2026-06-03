@@ -1,9 +1,1 @@
-node_modules/
-uploads/
-.env
-client/build/
-client/node_modules/
-*.log
-npm-debug.log*
-.DS_Store
-Thumbs.db
+node_modules
