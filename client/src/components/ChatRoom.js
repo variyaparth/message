@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import socket from '../socket';
+import socket, { API_BASE_URL } from '../socket';
 import MessageBubble from './MessageBubble';
 import UserList from './UserList';
 import ShareModal from './ShareModal';
@@ -128,7 +128,7 @@ export default function ChatRoom({ roomId, username, onLeave }) {
     formData.append('file', file);
 
     try {
-      const res = await fetch(`/api/rooms/${roomId}/upload`, {
+      const res = await fetch(`${API_BASE_URL}/api/rooms/${roomId}/upload`, {
         method: 'POST',
         body: formData,
       });
@@ -150,7 +150,7 @@ export default function ChatRoom({ roomId, username, onLeave }) {
     formData.append('file', blob, 'voice-note.webm');
 
     try {
-      const res = await fetch(`/api/rooms/${roomId}/upload`, {
+      const res = await fetch(`${API_BASE_URL}/api/rooms/${roomId}/upload`, {
         method: 'POST',
         body: formData,
       });

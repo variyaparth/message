@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import socket from '../socket';
+import socket, { checkServerHealth } from '../socket';
 
 const THEMES = [
   { id: 'dark', label: 'Dark', colors: 'from-slate-900 via-purple-900 to-slate-900' },
@@ -17,6 +17,83 @@ export default function Lobby({ onJoin }) {
   const [mode, setMode] = useState('create'); // 'create' | 'join'
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const ensureSocketConnected = () => new Promise((resolve, reject) => {
+    if (socket.connected) {
+      resolve();
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      socket.off('connect', onConnect);
+      socket.off('connect_error', onError);
+      reject(new Error('Connection failed'));
+    }, 30000);
+
+    const onConnect = () => {
+      clearTimeout(timeoutId);
+      socket.off('connect_error', onError);
+      resolve();
+    };
+
+    const onError = () => {
+      clearTimeout(timeoutId);
+      socket.off('connect', onConnect);
+      reject(new Error('Connection failed'));
+    };
+
+    socket.once('connect', onConnect);
+    socket.once('connect_error', onError);
+    if (!socket.connected) socket.connect();
+  });
+
+  const emitWithAck = async (event, payload, onSuccess) => {
+    try {
+      await ensureSocketConnected();
+    } catch (error) {
+      const health = await checkServerHealth();
+      console.error('[lobby] socket connection failed', {
+        event,
+        payload,
+        socketConnected: socket.connected,
+        socketId: socket.id,
+        serverUrl: socket.io?.uri,
+        errorMessage: error?.message,
+        serverHealth: health,
+      });
+      setLoading(false);
+      if (!health.ok) {
+        setError('Server is unreachable right now. Please verify backend deployment and REACT_APP_SERVER_URL.');
+      } else {
+        setError('Unable to connect to server. Please check your connection.');
+      }
+      return;
+    }
+
+    socket.timeout(30000).emit(event, payload, (err, response) => {
+      setLoading(false);
+
+      if (err) {
+        console.error('[lobby] socket ack timeout', {
+          event,
+          payload,
+          socketConnected: socket.connected,
+          socketId: socket.id,
+          serverUrl: socket.io?.uri,
+          error: err,
+        });
+        setError('Server is slow to respond. Please try again.');
+        return;
+      }
+
+      if (response?.error) {
+        setError(response.error);
+        return;
+      }
+
+      onSuccess(response);
+    });
+  };
 
   const handleCreate = (e) => {
     e.preventDefault();
